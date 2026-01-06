@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Instance mask comparison - ПРАВИЛЬНАЯ ВЕРСИЯ
+"""Instance mask comparison - Manual review tool
 
-ИСПРАВЛЕНИЯ:
-✓ Слайдер в пределах bbox объекта с реальными срезами
-✓ Instance mask с background=0 для napari
-✓ Автоматическое добавление непарных объектов
-✓ Индикация объектов только из A или только из B
+FEATURES:
+✓ Side-by-side comparison of two instance masks
+✓ Z-slider in object bbox showing only slices with actual pixels
+✓ Manual review of ALL objects including unpaired (⚠️UNPAIRED)
+✓ Instance mask output with background=0 for napari
+✓ No automatic additions - you control everything
 
 Управление:
-  1/A: выбрать A
-  2/B: выбрать B
+  1/A: choose mask A
+  2/B: choose mask B
   3/M: merge A+B
-  4/N: пропустить (не добавлять)
+  4/N: skip (don't add)
   U: undo
   Q: save
   ←/→: navigation
@@ -193,30 +194,23 @@ class InstanceMaskReviewer:
         # Находим РЕАЛЬНЫЕ Z-срезы где есть объект
         z_slices_with_obj = []
 
-        if id_a:
-            # Проверяем каждый срез в bbox A
+        # Если есть объект A - берём его срезы
+        if id_a and self.cache_bbox_a:
             zb, _, _ = self.cache_bbox_a
             for z in range(zb.start, zb.stop):
                 if (self.mask_a[z] == id_a).any():
                     z_slices_with_obj.append(z)
 
-        if id_b and not z_slices_with_obj:
-            # Если A пустой, берём B
+        # Если есть объект B - берём его срезы (или добавляем к A)
+        if id_b and self.cache_bbox_b:
             zb, _, _ = self.cache_bbox_b
             for z in range(zb.start, zb.stop):
                 if (self.mask_b[z] == id_b).any():
                     z_slices_with_obj.append(z)
 
-        # Если ничего не нашли - берём весь диапазон bbox
+        # Если ничего не нашли - fallback
         if not z_slices_with_obj:
-            if self.cache_bbox_a:
-                zb = self.cache_bbox_a[0]
-                z_slices_with_obj = list(range(zb.start, zb.stop))
-            elif self.cache_bbox_b:
-                zb = self.cache_bbox_b[0]
-                z_slices_with_obj = list(range(zb.start, zb.stop))
-            else:
-                z_slices_with_obj = [0]
+            z_slices_with_obj = [0]
 
         self.z_slices_available = sorted(set(z_slices_with_obj))
 
@@ -396,13 +390,21 @@ class InstanceMaskReviewer:
         # Слайдер - создаём с помощью новой функции
         self.update_bbox_cache()
 
-        id_a, _, _ = self.get_current_pair()
+        id_a, id_b, _ = self.get_current_pair()
+
+        # Выбираем лучший срез из доступного объекта
         if id_a and self.cache_bbox_a:
-            # Находим лучший срез ВНУТРИ списка доступных
-            best_z_global = self.z_slices_available[0] + best_slice_in_bbox(
-                self.mask_a, id_a, self.cache_bbox_a
-            )
-            # Преобразуем в локальный индекс
+            best_z_local_in_bbox = best_slice_in_bbox(self.mask_a, id_a, self.cache_bbox_a)
+            zb = self.cache_bbox_a[0]
+            best_z_global = zb.start + best_z_local_in_bbox
+            try:
+                self.state.z_local = self.z_slices_available.index(best_z_global)
+            except ValueError:
+                self.state.z_local = 0
+        elif id_b and self.cache_bbox_b:
+            best_z_local_in_bbox = best_slice_in_bbox(self.mask_b, id_b, self.cache_bbox_b)
+            zb = self.cache_bbox_b[0]
+            best_z_global = zb.start + best_z_local_in_bbox
             try:
                 self.state.z_local = self.z_slices_available.index(best_z_global)
             except ValueError:
@@ -483,13 +485,20 @@ class InstanceMaskReviewer:
             self.update_bbox_cache()
 
             # Находим лучший срез для нового объекта
-            id_a, _, _ = self.get_current_pair()
+            id_a, id_b, _ = self.get_current_pair()
+
             if id_a and self.cache_bbox_a:
                 best_z_local_in_bbox = best_slice_in_bbox(self.mask_a, id_a, self.cache_bbox_a)
-                # Конвертируем в глобальный
                 zb = self.cache_bbox_a[0]
                 best_z_global = zb.start + best_z_local_in_bbox
-                # Находим в нашем списке доступных срезов
+                try:
+                    self.state.z_local = self.z_slices_available.index(best_z_global)
+                except ValueError:
+                    self.state.z_local = 0
+            elif id_b and self.cache_bbox_b:
+                best_z_local_in_bbox = best_slice_in_bbox(self.mask_b, id_b, self.cache_bbox_b)
+                zb = self.cache_bbox_b[0]
+                best_z_global = zb.start + best_z_local_in_bbox
                 try:
                     self.state.z_local = self.z_slices_available.index(best_z_global)
                 except ValueError:
@@ -507,10 +516,19 @@ class InstanceMaskReviewer:
             self.state.pair_idx -= 1
             self.update_bbox_cache()
 
-            id_a, _, _ = self.get_current_pair()
+            id_a, id_b, _ = self.get_current_pair()
+
             if id_a and self.cache_bbox_a:
                 best_z_local_in_bbox = best_slice_in_bbox(self.mask_a, id_a, self.cache_bbox_a)
                 zb = self.cache_bbox_a[0]
+                best_z_global = zb.start + best_z_local_in_bbox
+                try:
+                    self.state.z_local = self.z_slices_available.index(best_z_global)
+                except ValueError:
+                    self.state.z_local = 0
+            elif id_b and self.cache_bbox_b:
+                best_z_local_in_bbox = best_slice_in_bbox(self.mask_b, id_b, self.cache_bbox_b)
+                zb = self.cache_bbox_b[0]
                 best_z_global = zb.start + best_z_local_in_bbox
                 try:
                     self.state.z_local = self.z_slices_available.index(best_z_global)
@@ -539,40 +557,6 @@ class InstanceMaskReviewer:
             print(f"[ERROR] Save: {e}")
 
     def save_and_quit(self):
-        # Автоматически добавляем все непроверенные объекты
-        print("[INFO] Adding unpaired objects...", flush=True)
-        for idx in range(self.state.pair_idx + 1, len(self.pairs)):
-            id_a, id_b, _ = self.pairs[idx]
-
-            # Если объект есть только в A - добавляем его
-            if id_a and not id_b:
-                source_mask = (self.mask_a == id_a)
-                self.result[source_mask] = self.next_id
-                self.next_id += 1
-                print(f"  Added A obj {id_a}", flush=True)
-
-            # Если объект есть только в B - добавляем его
-            elif id_b and not id_a:
-                source_mask = (self.mask_b == id_b)
-                self.result[source_mask] = self.next_id
-                self.next_id += 1
-                print(f"  Added B obj {id_b}", flush=True)
-
-            # Если есть оба (пара) - добавляем тот у которого больше IoU или объём
-            elif id_a and id_b:
-                # Берём объект с большим объёмом
-                vox_a = (self.mask_a == id_a).sum()
-                vox_b = (self.mask_b == id_b).sum()
-                if vox_a >= vox_b:
-                    source_mask = (self.mask_a == id_a)
-                    self.result[source_mask] = self.next_id
-                    print(f"  Added A obj {id_a} (vox={vox_a})", flush=True)
-                else:
-                    source_mask = (self.mask_b == id_b)
-                    self.result[source_mask] = self.next_id
-                    print(f"  Added B obj {id_b} (vox={vox_b})", flush=True)
-                self.next_id += 1
-
         self.save_current()
         plt.close(self.fig)
 
