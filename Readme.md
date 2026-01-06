@@ -46,17 +46,17 @@ pip install numpy scipy matplotlib tifffile
 
 python compare\_instance\_masks.py \\
 
-&nbsp;   --images\_dir /path/to/images \\
+   --images\_dir /path/to/images \\
 
-&nbsp;   --mask\_a\_dir /path/to/masks\_a \\
+   --mask\_a\_dir /path/to/masks\_a \\
 
-&nbsp;   --mask\_b\_dir /path/to/masks\_b \\
+  --mask\_b\_dir /path/to/masks\_b \\
 
-&nbsp;   --out\_dir /path/to/output \\
+ --out\_dir /path/to/output \\
 
-&nbsp;   --margin 15 \\
+  --margin 15 \\
 
-&nbsp;   --iou\_threshold 0.1
+  --iou\_threshold 0.1
 
 ```
 
