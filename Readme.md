@@ -77,7 +77,6 @@ python compare_instance_masks.py \
 - **Objects**: Sequential IDs (1, 2, 3...)
 - **Compatible**: Napari, ImageJ, QuPath
 
-## Example Workflow
 ## Statistics
 
 Final summary includes:
